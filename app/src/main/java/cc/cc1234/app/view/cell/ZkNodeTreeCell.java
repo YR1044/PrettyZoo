@@ -7,7 +7,7 @@ import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXTreeCell;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
-import javafx.scene.image.ImageView;
+import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Text;
@@ -18,21 +18,24 @@ public class ZkNodeTreeCell extends JFXTreeCell<ZkNode> {
 
     private PrettyZooFacade prettyZooFacade = new PrettyZooFacade();
 
+    private Text node = new Text();
+
     public ZkNodeTreeCell(Runnable createAction, Runnable deleteAction) {
+        node.getStyleClass().add("text");
+
         ResourceBundle rb = ResourceBundleUtils.get(prettyZooFacade.getLocale());
+
         String addButtonText = rb.getString("nodeList.button.add");
-        String deleteButtonText = rb.getString("nodeList.button.delete");
-        JFXButton add = new JFXButton(addButtonText);
-        ImageView addGraphic = new ImageView("assets/img/add.png");
-        addGraphic.setFitWidth(18);
-        addGraphic.setFitHeight(18);
+        var add = new JFXButton(addButtonText);
+        Label addGraphic = new Label();
+        addGraphic.getStyleClass().add("add-button");
         add.setGraphic(addGraphic);
         add.setOnAction(e -> createAction.run());
 
-        ImageView deleteGraphic = new ImageView("assets/img/delete.png");
-        deleteGraphic.setFitHeight(18);
-        deleteGraphic.setFitWidth(18);
-        JFXButton delete = new JFXButton(deleteButtonText);
+        String deleteButtonText = rb.getString("nodeList.button.delete");
+        var delete = new JFXButton(deleteButtonText);
+        Label deleteGraphic = new Label();
+        deleteGraphic.getStyleClass().add("remove-button");
         delete.setGraphic(deleteGraphic);
         delete.setOnAction(e -> {
             deleteAction.run();
@@ -52,16 +55,11 @@ public class ZkNodeTreeCell extends JFXTreeCell<ZkNode> {
             setText(null);
             setGraphic(null);
         } else {
-            final Text node = new Text(item.getName());
+            node.setText(item.getName());
             // ephemeral node
             if (item.getEphemeralOwner() != 0) {
                 node.setFill(Color.valueOf("#ffab00"));
             }
-
-            if (this.isSelected() && item.getEphemeralOwner() == 0) {
-                node.setFill(Color.valueOf("#FFF"));
-            }
-
             final HBox hbox = new HBox();
             hbox.getChildren().add(node);
             setGraphic(hbox);

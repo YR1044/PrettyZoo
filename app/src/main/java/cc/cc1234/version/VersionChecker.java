@@ -11,41 +11,57 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class VersionChecker {
 
     private static final Logger logger = LoggerFactory.getLogger(VersionChecker.class);
 
-    public static void hasNewVersion(BiConsumer<String, String> runnable) {
-        var request = HttpRequest.newBuilder(URI.create("https://api.github.com/repos/vran-dev/PrettyZoo/releases/latest"))
-                .build();
+    public static void hasNewVersion(BiConsumer<String, String> newVersionAction,
+                                     Runnable noUpdateAction,
+                                     Consumer<Throwable> exceptionally) {
+        URI uri = URI.create("https://api.github.com/repos/vran-dev/PrettyZoo/releases/latest");
+        var request = HttpRequest.newBuilder(uri)
+            .build();
         var client = HttpClient.newHttpClient();
         client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenAccept(response -> {
+            .thenAccept(response -> {
+                if (logger.isDebugEnabled()) {
                     final String header = response.headers()
-                            .map()
-                            .entrySet()
-                            .stream()
-                            .map(entry -> entry.getKey() + ":" + entry.getValue())
-                            .collect(Collectors.joining("\r\n"));
-                    logger.info("[version check] " + header);
-                    logger.info("[version check] " + response.body());
-                    try {
-                        final JsonMapper mapper = new JsonMapper();
-                        final ObjectNode node = mapper.readValue(response.body(), ObjectNode.class);
-                        final String latestVersion = node.get("tag_name").asText("");
-                        final String features = node.get("body").asText("");
-                        compareAndRun(latestVersion, features, runnable);
-                    } catch (Exception exception) {
-                        logger.error("check update failed", exception);
-                    }
-                });
+                        .map()
+                        .entrySet()
+                        .stream()
+                        .map(entry -> entry.getKey() + ":" + entry.getValue())
+                        .collect(Collectors.joining("\r\n"));
+                    logger.debug("[response header] " + header);
+                    logger.debug("[response body] " + response.body());
+                }
+                try {
+                    final JsonMapper mapper = new JsonMapper();
+                    final ObjectNode node = mapper.readValue(response.body(), ObjectNode.class);
+                    final String latestVersion = node.get("tag_name").asText("");
+                    final String features = node.get("body").asText("");
+                    compareAndRun(latestVersion, features, newVersionAction, noUpdateAction);
+                } catch (Exception exception) {
+                    logger.error("check update failed", exception);
+                    throw new RuntimeException("check update failed", exception);
+                }
+            })
+            .exceptionally((ex) -> {
+                Platform.runLater(() -> exceptionally.accept(ex));
+                return null;
+            });
     }
 
-    private static void compareAndRun(String latestVersion, String features, BiConsumer<String, String> runnable) {
+    private static void compareAndRun(String latestVersion,
+                                      String features,
+                                      BiConsumer<String, String> runnable,
+                                      Runnable noUpdate) {
         if (isLargerThanCurrent(latestVersion)) {
             Platform.runLater(() -> runnable.accept(latestVersion, features));
+        } else {
+            Platform.runLater(noUpdate);
         }
     }
 

@@ -10,16 +10,13 @@ import java.util.Optional;
 public class ServerConfigData {
 
     /**
-     * url = host:port
+     * nullable
      */
-    private String url;
+    private String id;
 
     private String host;
 
-    /**
-     * compatible: v1.9.3 will be required
-     */
-    private Optional<Integer> port = Optional.empty();
+    private Integer port;
 
     private String alias;
 
@@ -29,6 +26,10 @@ public class ServerConfigData {
 
     private Boolean sshTunnelEnabled = false;
 
+    private Boolean enableConnectionAdvanceConfiguration = false;
+
     private Optional<SSHTunnelConfigData> sshTunnelConfig = Optional.empty();
+
+    private ConnectionConfigData connectionConfig = new ConnectionConfigData();
 
 }

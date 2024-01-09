@@ -20,7 +20,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 public class CuratorZookeeperConnectionFactory implements ZookeeperConnectionFactory<CuratorFramework> {
 
@@ -34,12 +33,12 @@ public class CuratorZookeeperConnectionFactory implements ZookeeperConnectionFac
         try {
             if (!client.blockUntilConnected(5, TimeUnit.SECONDS)) {
                 client.close();
-                throw new IllegalStateException("连接超时");
+                throw new IllegalStateException("connect timeout");
             }
         } catch (InterruptedException e) {
-            throw new IllegalStateException("连接失败", e);
+            throw new IllegalStateException("connect timeout", e);
         }
-        return new CuratorZookeeperConnection(client);
+        return new CuratorZookeeperConnection(params.getId(), client);
     }
 
     @Override
@@ -51,11 +50,13 @@ public class CuratorZookeeperConnectionFactory implements ZookeeperConnectionFac
                 switch (newState) {
                     case RECONNECTED:
                     case CONNECTED:
-                        listener.forEach(l -> l.onConnected(params.getUrl()));
+                        if (client.getZookeeperClient().isConnected()) {
+                            listener.forEach(l -> l.onConnected(params.getId()));
+                        }
                         break;
                     case SUSPENDED:
                     case LOST:
-                        listener.forEach(l -> l.onReconnecting(params.getUrl()));
+                        listener.forEach(l -> l.onReconnecting(params.getId()));
                         break;
                     default:
                         client.close();
@@ -64,7 +65,12 @@ public class CuratorZookeeperConnectionFactory implements ZookeeperConnectionFac
         });
         client.getCuratorListenable().addListener((client1, event) -> {
             if (event.getType() == CuratorEventType.CLOSING) {
-                listener.forEach(l -> l.onClose(params.getUrl()));
+                listener.forEach(l -> l.onClose(params.getId()));
+            }
+            if (event.getWatchedEvent().getState().name().equals("AuthFailed")) {
+                if (!client1.getZookeeperClient().isConnected()) {
+                    listener.forEach(l -> l.onClose(params.getId(), "AuthFailed"));
+                }
             }
         });
 
@@ -78,32 +84,36 @@ public class CuratorZookeeperConnectionFactory implements ZookeeperConnectionFac
             client.close();
             throw new IllegalStateException("connect " + params.getUrl() + " failed", e);
         }
-        return new CuratorZookeeperConnection(client);
+        return new CuratorZookeeperConnection(params.getId(), client);
     }
 
-
     private CuratorFramework curatorFramework(ZookeeperParams params) {
-        final RetryPolicy retryPolicy = new ExponentialBackoffRetry(1000, 2);
+        final RetryPolicy retryPolicy =
+            new ExponentialBackoffRetry(params.getRetryIntervalTime(), params.getMaxRetries());
         final CuratorFrameworkFactory.Builder builder = CuratorFrameworkFactory.builder()
-                .connectString(params.getUrl())
-                .connectionTimeoutMs(5000)
-                .sessionTimeoutMs(6000)
-                .retryPolicy(retryPolicy);
+            .connectString(params.getUrl())
+            .connectionTimeoutMs(params.getConnectionTimeout())
+            .sessionTimeoutMs(params.getSessionTimeout())
+            .retryPolicy(retryPolicy);
 
-        if (!params.getAclList().isEmpty()) {
-            final List<AuthInfo> acls = params.getAclList().stream().map(ACLs::parseDigest).collect(Collectors.toList());
+        List<AuthInfo> acls = params.getAclList()
+            .stream()
+            .filter(s -> !s.isBlank())
+            .map(ACLs::parseDigest)
+            .toList();
+        if (!acls.isEmpty()) {
             builder.authorization(acls)
-                    .aclProvider(new ACLProvider() {
-                        @Override
-                        public List<ACL> getDefaultAcl() {
-                            return ZooDefs.Ids.CREATOR_ALL_ACL;
-                        }
+                .aclProvider(new ACLProvider() {
+                    @Override
+                    public List<ACL> getDefaultAcl() {
+                        return ZooDefs.Ids.CREATOR_ALL_ACL;
+                    }
 
-                        @Override
-                        public List<ACL> getAclForPath(String path) {
-                            return ZooDefs.Ids.CREATOR_ALL_ACL;
-                        }
-                    });
+                    @Override
+                    public List<ACL> getAclForPath(String path) {
+                        return ZooDefs.Ids.CREATOR_ALL_ACL;
+                    }
+                });
         }
 
         return builder.build();

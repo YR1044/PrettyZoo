@@ -10,6 +10,7 @@ import cc.cc1234.app.view.cell.ZkNodeTreeCell;
 import cc.cc1234.app.view.dialog.Dialog;
 import cc.cc1234.app.view.toast.VToast;
 import cc.cc1234.app.vo.ZkNodeSearchResult;
+import cc.cc1234.core.configuration.entity.ServerConfiguration;
 import cc.cc1234.specification.node.ZkNode;
 import cc.cc1234.specification.util.StringWriter;
 import javafx.collections.ObservableList;
@@ -17,8 +18,8 @@ import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.effect.BlurType;
 import javafx.scene.effect.DropShadow;
-import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
@@ -38,6 +39,9 @@ public class NodeViewController {
     private TabPane nodeViewPane;
 
     @FXML
+    private SplitPane nodeViewSplitPane;
+
+    @FXML
     private AnchorPane nodeViewLeftPane;
 
     @FXML
@@ -51,9 +55,6 @@ public class NodeViewController {
 
     @FXML
     private StackPane nodeViewRightPane;
-
-    @FXML
-    private Button disconnectButton;
 
     @FXML
     private Tab homeTab;
@@ -78,7 +79,7 @@ public class NodeViewController {
 
     private PrettyZooFacade prettyZooFacade = new PrettyZooFacade();
 
-    private String server;
+    private String serverId;
 
     private NodeInfoViewController nodeInfoViewController = FXMLs.getController("fxml/NodeInfoView.fxml");
 
@@ -87,39 +88,36 @@ public class NodeViewController {
     @FXML
     public void initialize() {
         nodeViewPane.setEffect(new DropShadow(BlurType.GAUSSIAN, Color.valueOf("#EEE"), 5, 0.1, 3, 5));
-
+        nodeViewSplitPane.setDividerPositions(prettyZooFacade.getNodeViewSplitPaneDividerPosition());
+        nodeViewSplitPane.getDividers().stream().findFirst().ifPresent(divider -> {
+            divider.positionProperty().addListener(((observable, oldValue, newValue) -> {
+                prettyZooFacade.changeNodeViewSplitPaneDividerPosition(newValue.doubleValue());
+            }));
+        });
         initSearchResultList();
         initSearchTextField();
         initZkNodeTreeView();
-        initHomeTab();
         initTerminalArea();
         initFourLetterTab();
-
-        disconnectButton.setTooltip(new Tooltip("disconnect server"));
-        disconnectButton.setOnAction(e -> {
-            final String server = ActiveServerContext.get();
-            prettyZooFacade.disconnect(server);
-            hideAndThen(() -> VToast.info("disconnect " + server + " success"));
-        });
-
     }
 
     public void show(StackPane parent,
-                     String server) {
-        if (server != null) {
-            switchServer(server);
+                     String serverId) {
+        if (serverId != null) {
+            switchServer(serverId);
         }
 
         if (!parent.getChildren().contains(nodeViewPane)) {
             parent.getChildren().add(nodeViewPane);
         }
-        terminalTab.setText(server);
-        this.server = server;
+        this.serverId = serverId;
     }
 
-    public void disconnect(String server) {
-        prettyZooFacade.disconnect(server);
-        hideAndThen(() -> VToast.info("disconnect " + server + " success"));
+    public void disconnectById(String id) {
+        prettyZooFacade.disconnect(id);
+        hideAndThen(() -> {
+            VToast.info("disconnect " + prettyZooFacade.getServerConfigurationById(id).getLabel() + " success");
+        });
     }
 
     public void hide() {
@@ -128,7 +126,7 @@ public class NodeViewController {
     }
 
     public void hideIfNotActive() {
-        if (!ActiveServerContext.isSame(server)) {
+        if (!ActiveServerContext.isSame(serverId)) {
             hide();
         }
     }
@@ -165,8 +163,8 @@ public class NodeViewController {
             String content = String.format(rb.getString("nodeDelete.action.confirm.content"), nodes);
             Dialog.confirm(title, content, () -> {
                 Try.of(() -> prettyZooFacade.deleteNode(ActiveServerContext.get(), pathList))
-                        .onFailure(exception -> VToast.error("delete failed:" + exception.getMessage()))
-                        .onSuccess(t -> VToast.info("Request success"));
+                    .onFailure(exception -> VToast.error("delete failed:" + exception.getMessage()))
+                    .onSuccess(t -> VToast.info("Request success"));
             });
         }
     }
@@ -202,15 +200,23 @@ public class NodeViewController {
                     setGraphic(item.getTextFlow());
                     setOnMouseClicked(mouseEvent -> {
                         if (mouseEvent.getClickCount() == 2) {
-                            ListCell<ZkNodeSearchResult> clickedRow = (ListCell<ZkNodeSearchResult>) mouseEvent.getSource();
-                            zkNodeTreeView.getSelectionModel().clearSelection();
-                            zkNodeTreeView.getSelectionModel().select(clickedRow.getItem().getItem());
-                            zkNodeTreeView.scrollTo(zkNodeTreeView.getSelectionModel().getSelectedIndex());
-                            zkNodeTreeView.requestFocus();
+                            var clickedRow = (ListCell<ZkNodeSearchResult>) mouseEvent.getSource();
+                            TreeItem<ZkNode> clickedNode = clickedRow.getItem().getItem();
                             if (searchResultList.isVisible()) {
                                 searchResultList.getItems().clear();
                                 searchResultList.setVisible(false);
                             }
+                            zkNodeTreeView.getSelectionModel().clearSelection();
+                            zkNodeTreeView.getSelectionModel().select(clickedNode);
+                            zkNodeTreeView.scrollTo(zkNodeTreeView.getSelectionModel().getSelectedIndex());
+                            zkNodeTreeView.requestFocus();
+                            return;
+                        }
+
+                        if (mouseEvent.getButton() == MouseButton.PRIMARY
+                            && mouseEvent.getClickCount() == 1) {
+                            nodeInfoViewController.show(nodeViewRightPane, item.getItem().getValue());
+                            return;
                         }
                     });
                 }
@@ -219,55 +225,44 @@ public class NodeViewController {
     }
 
     private void initZkNodeTreeView() {
+        zkNodeTreeView.setCellFactory(view -> new ZkNodeTreeCell(this::onNodeAdd, this::onNodeDelete));
         zkNodeTreeView.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         zkNodeTreeView.getSelectionModel()
-                .selectedItemProperty()
-                .addListener((observable, oldValue, newValue) -> {
-                    nodeAddViewController.hide();
-                    if (newValue != null) {
-                        nodeInfoViewController.show(nodeViewRightPane, newValue.getValue());
-                    }
-                });
+            .selectedItemProperty()
+            .addListener((observable, oldValue, newValue) -> {
+                nodeAddViewController.hide();
+                if (newValue != null) {
+                    nodeInfoViewController.show(nodeViewRightPane, newValue.getValue());
+                }
+            });
     }
 
-    private void switchServer(String url) {
-        zkNodeTreeView.setCellFactory(view -> new ZkNodeTreeCell(this::onNodeAdd, this::onNodeDelete));
-        initRootTreeNode(url);
-        ActiveServerContext.set(url);
-        prettyZooFacade.syncIfNecessary(url);
+    private void switchServer(String serverId) {
+        initRootTreeNode(serverId);
+        ActiveServerContext.set(serverId);
+        prettyZooFacade.syncIfNecessary(serverId);
         final TreeItem<ZkNode> selectedItem = zkNodeTreeView.getSelectionModel().getSelectedItem();
         if (selectedItem != null) {
             nodeInfoViewController.show(nodeViewRightPane, selectedItem.getValue());
         } else {
             nodeInfoViewController.show(nodeViewRightPane);
         }
-        log.debug("switch server {} success", url);
+        log.debug("switch server {} success", serverId);
     }
 
-    private void initRootTreeNode(String host) {
+    private void initRootTreeNode(String serverId) {
         final String root = "/";
         final TreeItemCache treeItemCache = TreeItemCache.getInstance();
-        if (!treeItemCache.hasNode(host, root)) {
+        if (!treeItemCache.hasNode(serverId, root)) {
             final ZkNode zkNode = new ZkNode(root, root);
             zkNode.resetStat();
             final TreeItem<ZkNode> rootTreeItem = new TreeItem<>(zkNode);
-            treeItemCache.add(host, root, rootTreeItem);
+            treeItemCache.add(serverId, root, rootTreeItem);
             zkNodeTreeView.setRoot(rootTreeItem);
         }
     }
 
-    private void initHomeTab() {
-        final ImageView imageView = new ImageView("assets/img/tab/home.png");
-        imageView.setFitWidth(18);
-        imageView.setFitHeight(18);
-        homeTab.setGraphic(imageView);
-    }
-
     private void initTerminalArea() {
-        final ImageView imageView = new ImageView("assets/img/tab/terminal.png");
-        imageView.setFitWidth(18);
-        imageView.setFitHeight(18);
-        terminalTab.setGraphic(imageView);
         terminalTab.selectedProperty().addListener((observable, oldValue, newValue) -> {
             if (newValue) {
                 prettyZooFacade.startTerminal(ActiveServerContext.get(), new StringWriter() {
@@ -286,17 +281,19 @@ public class NodeViewController {
 
         terminalArea.setEditable(false);
         terminalArea.setWrapText(true);
-        terminalArea.textProperty().addListener((ob, old, newValue) -> terminalArea.setScrollTop(Double.MAX_VALUE));
+        terminalArea.textProperty()
+            .addListener((ob, old, newValue) -> terminalArea.setScrollTop(Double.MAX_VALUE));
         terminalInput.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ENTER) {
-                final String currentServer = ActiveServerContext.get();
+                final String currentServerId = ActiveServerContext.get();
+                ServerConfiguration server = prettyZooFacade.getServerConfigurationById(currentServerId);
                 if ("clear".equals(terminalInput.getText())) {
                     terminalInput.clear();
                     terminalArea.clear();
-                    terminalArea.appendText(currentServer + "\t$\t" + terminalInput.getText());
+                    terminalArea.appendText(server.getLabel() + " $ " + terminalInput.getText());
                 } else {
-                    terminalArea.appendText(currentServer + "\t$\t" + terminalInput.getText() + "\r\n");
-                    prettyZooFacade.executeCommand(currentServer, terminalInput.getText());
+                    terminalArea.appendText(server.getLabel() + " $ " + terminalInput.getText() + "\r\n");
+                    prettyZooFacade.executeCommand(currentServerId, terminalInput.getText());
                     terminalInput.clear();
                 }
                 terminalArea.appendText("\r\n");
@@ -307,10 +304,6 @@ public class NodeViewController {
     }
 
     private void initFourLetterTab() {
-        final ImageView graphic = new ImageView("assets/img/tab/fourLetter.png");
-        graphic.setFitHeight(20);
-        graphic.setFitWidth(20);
-        fourLetterCommandTab.setGraphic(graphic);
         fourLetterCommandRequestArea.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ENTER) {
                 String command = fourLetterCommandRequestArea.getText();

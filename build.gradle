@@ -1,3 +1,7 @@
+plugins {
+    id 'checkstyle'
+}
+
 group 'cc.c1234'
 
 tasks.withType(JavaCompile) {
@@ -7,21 +11,27 @@ tasks.withType(JavaCompile) {
 allprojects {
     repositories {
         mavenLocal()
+        mavenCentral()
         maven {
             url 'https://maven.aliyun.com/nexus/content/groups/public/'
         }
-        mavenCentral()
     }
 }
 
 subprojects {
     apply plugin: 'java-library'
-    apply plugin: 'application'
     apply plugin: 'idea'
+    apply plugin: 'checkstyle'
 
     sourceCompatibility = 17
     group 'cc.c1234'
-    version '1.9.5'
+    version '2.1.1'
+
+    checkstyle {
+        toolVersion = '8.42'
+        ignoreFailures = false
+        maxWarnings = 0
+    }
 
     tasks.withType(JavaCompile) {
         options.encoding = 'UTF-8'
@@ -30,24 +40,25 @@ subprojects {
     ext {
         slf4jVersion = '1.7.28'
         jacksonVersion = '2.12.0'
-        log4jVersion = '2.12.1'
-        lombokVersion = '1.18.22'
+        log4jVersion = '2.20.0'
         junitVersion = '4.12'
-        zookeeperVersion = '3.4.6'
-        curatorRecipesVersion = '4.2.0'
+        zookeeperVersion = '3.6.4'
+        curatorRecipesVersion = '5.4.0'
         guavaVersio = '27.0.1-jre'
         jfoenixVersion = '9.0.10'
-        richtextfxVersion = '0.10.6'
-        sshjVersion = '0.27.0'
+        richtextfxVersion = '0.11.0'
+        sshjVersion = '0.34.0'
         antlr4RuntimeVersion = '4.9.2'
         commonsIoVersion = '2.10.0'
+        lombokVersion = '1.18.22'
+        mapStructVersion = '1.5.3.Final'
     }
 
     dependencies {
         implementation group: 'org.slf4j', name: 'slf4j-api', version: "${slf4jVersion}"
-        implementation group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: "${log4jVersion}"
-        implementation group: 'org.apache.logging.log4j', name: 'log4j-api', version: "${log4jVersion}"
-        implementation group: 'org.apache.logging.log4j', name: 'log4j-core', version: "${log4jVersion}"
+        implementation "org.apache.logging.log4j:log4j-api:${log4jVersion}"
+        implementation "org.apache.logging.log4j:log4j-core:${log4jVersion}"
+        implementation "org.apache.logging.log4j:log4j-slf4j2-impl:${log4jVersion}"
         testImplementation group: 'junit', name: 'junit', version: "${junitVersion}"
 
         constraints {
@@ -57,6 +68,12 @@ subprojects {
             implementation group: 'com.jfoenix', name: 'jfoenix', version: "${jfoenixVersion}"
             implementation "com.google.guava:guava:${guavaVersio}"
             implementation group: 'org.antlr', name: 'antlr4-runtime', version: "${antlr4RuntimeVersion}"
+            implementation('org.slf4j:slf4j-api:2.0.6') {
+                force = true
+            }
+            implementation('org.slf4j:slf4j-log4j12:2.0.6') {
+                force = true
+            }
             api("org.apache.zookeeper:zookeeper:${zookeeperVersion}") {
                 force = true
             }

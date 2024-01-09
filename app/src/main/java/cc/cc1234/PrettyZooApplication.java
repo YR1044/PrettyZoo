@@ -5,6 +5,7 @@ import cc.cc1234.app.context.PrimaryStageContext;
 import cc.cc1234.app.controller.MainViewController;
 import cc.cc1234.app.facade.PrettyZooFacade;
 import cc.cc1234.app.util.FXMLs;
+import cc.cc1234.specification.config.PrettyZooConfigRepository;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
@@ -15,13 +16,15 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Objects;
 import java.util.Optional;
 
 public class PrettyZooApplication extends Application {
 
-    private PrettyZooFacade facade = new PrettyZooFacade();
+    private static final PrettyZooFacade facade = new PrettyZooFacade();
 
     public static void main(String[] args) {
+        facade.initZookeeperSystemProperties();
         initIconImage();
         Application.launch(args);
     }
@@ -40,7 +43,8 @@ public class PrettyZooApplication extends Application {
     }
 
     private static Optional<InputStream> getIconStream() {
-        InputStream stream = PrettyZooApplication.class.getClassLoader().getSystemResourceAsStream("assets/img/prettyzoo-logo.png");
+        InputStream stream = PrettyZooApplication.class.getClassLoader()
+                .getSystemResourceAsStream("assets/icon/icon.png");
         return Optional.ofNullable(stream);
     }
 
@@ -61,11 +65,17 @@ public class PrettyZooApplication extends Application {
         MainViewController controller = FXMLs.getController("fxml/MainView.fxml");
         final StackPane stackPane = controller.getRootStackPane();
 
-        primaryStage.setScene(new Scene(stackPane));
+        Scene scene = new Scene(stackPane);
+        String theme = facade.getThemeFromConfig();
+        scene.getStylesheets().add("assets/css/default/style.css");
+        if (Objects.equals(theme, PrettyZooConfigRepository.THEME_DARK)) {
+            scene.getStylesheets().add("assets/css/dark/style.css");
+        }
+        primaryStage.setScene(scene);
         primaryStage.setTitle("PrettyZoo");
         getIconStream().ifPresent(stream -> primaryStage.getIcons().add(new Image(stream)));
         primaryStage.setOnShown(e -> {
-            controller.showNewVersionLabel();
+            controller.checkForUpdate();
             controller.bindShortcutKey();
         });
         primaryStage.show();

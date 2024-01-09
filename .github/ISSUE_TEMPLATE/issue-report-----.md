@@ -1,31 +1,22 @@
 ---
-name: 'issue report'
-about: 'prettyZoo issue report'
-title: 'Title'
-labels: ''
+name: 'Create Issue From Template'
+about: 'PrettyZoo application ISSUE report'
+title: 'Issue title'
 assignees: 'vran-dev'
-
 ---
 
-## ISSUE
+## Info
 
-version: latest
-
-platform: 
-
-- [ ] windows
-- [ ] mac
-- [ ] Linux
-
-package type: platform default
-
-OS version: Windows10 / Ubuntu1804
+* Version: `latest`
+* App distribution: `prettyzoo-win.msi`
+* OS version: `win11`
 
 
-description:
+## Description
 
-what happened ? your expected ?
+> details what happened and expected
 
-log:
+
+## Logs
 
 > you can find log in {user.home}/.prettyZoo/log

@@ -18,24 +18,30 @@ import cc.cc1234.app.vo.ServerConfigurationVO;
 import cc.cc1234.specification.config.model.ConfigData;
 import cc.cc1234.version.Version;
 import cc.cc1234.version.VersionChecker;
-import com.jfoenix.controls.JFXListView;
 import com.jfoenix.controls.JFXSlider;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
+import javafx.collections.ListChangeListener;
 import javafx.fxml.FXML;
-import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.AnchorPane;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.StringWriter;
+import java.util.Properties;
 import java.util.ResourceBundle;
 
 public class MainViewController {
+
+    private static final Logger log = LoggerFactory.getLogger(MainViewController.class);
 
     @FXML
     private StackPane rootStackPane;
@@ -50,13 +56,22 @@ public class MainViewController {
     private StackPane mainRightPane;
 
     @FXML
-    private JFXListView<ServerConfigurationVO> serverListView;
+    private ListView<ServerConfigurationVO> serverListView;
 
     @FXML
-    private HBox serverButtons;
+    private VBox serverButtons;
 
     @FXML
     private Button serverAddButton;
+
+    @FXML
+    private Button checkUpdateButton;
+
+    @FXML
+    private Button logsButton;
+
+    @FXML
+    private Button darkModeSwitchButton;
 
     @FXML
     private MenuItem exportMenuItem;
@@ -65,19 +80,28 @@ public class MainViewController {
     private MenuItem importMenuItem;
 
     @FXML
-    private MenuItem logMenuItem;
+    private MenuItem zookeeperPropsMenuItem;
+
+    @FXML
+    private MenuItem resetMenuItem;
 
     @FXML
     private Menu langMenu;
 
     @FXML
-    private MenuButton fontMenuButton;
+    private JFXSlider fontSizeSlider;
 
     @FXML
-    private Label newVersionLabel;
+    private MenuItem fontSizeMenuItem;
 
     @FXML
-    private Hyperlink prettyZooLink;
+    private Button prettyZooLink;
+
+    @FXML
+    private Button sponsorButton;
+
+    @FXML
+    private Label wechatSponsorLabel;
 
     private ServerViewController serverViewController = FXMLs.getController("fxml/ServerView.fxml");
 
@@ -88,45 +112,146 @@ public class MainViewController {
     @FXML
     private void initialize() {
         initServerListView();
+        initConfigs();
+
         RootPaneContext.set(rootStackPane);
-        mainRightPane.setPadding(new Insets(30, 30, 30, 30));
+        if (serverListView.getItems().isEmpty()) {
+            mainSplitPane.setDividerPositions(calculateDividerPositions());
+        } else {
+            mainSplitPane.setDividerPositions(prettyZooFacade.getMainSplitPaneDividerPosition());
+        }
+        mainSplitPane.getDividers().stream().findFirst().ifPresent(divider -> {
+            divider.positionProperty().addListener(((observable, oldValue, newValue) -> {
+                prettyZooFacade.changeMainSplitPaneDividerPosition(newValue.doubleValue());
+            }));
+        });
+
+        initMenuAction();
+        serverViewController.setOnClose(() -> this.serverListView.selectionModelProperty().get().clearSelection());
+        prettyZooLink.setOnMouseClicked(e -> HostServiceContext.get()
+            .showDocument("https://github.com/vran-dev/PrettyZoo"));
+        initFontChangeButton();
+        initSponsorButton();
+    }
+
+    private void initSponsorButton() {
+        sponsorButton.setOnMouseEntered(e -> {
+            wechatSponsorLabel.setVisible(true);
+        });
+
+        sponsorButton.setOnMouseExited(e -> {
+            wechatSponsorLabel.setVisible(false);
+        });
+    }
+
+    public StackPane getRootStackPane() {
+        return rootStackPane;
+    }
+
+    public void checkForUpdate() {
+        doCheckForUpdate(true);
+    }
+
+    private void doCheckForUpdate(Boolean ignoreToast) {
+        if (checkUpdateButton.getGraphic() != null) {
+            return;
+        }
+        ProgressIndicator indicator = new ProgressIndicator();
+        indicator.setPrefSize(12, 12);
+        indicator.getStyleClass().add("check-update-progress");
+
+        checkUpdateButton.getStyleClass().remove("check-update-button");
+        checkUpdateButton.setGraphic(indicator);
+        VersionChecker.hasNewVersion((latestVersion, features) -> {
+                String title = "New version";
+                final String content = new StringBuilder()
+                    .append("latest: ").append(latestVersion).append("\r\n")
+                    .append("yours: v").append(Version.VERSION).append("\r\n")
+                    .append("features: \r\n").append(features)
+                    .toString();
+                checkUpdateButton.setOnAction(e2 ->
+                    Dialog.confirm(title, content, HostServiceContext::jumpToReleases));
+                checkUpdateButton.getStyleClass().add("new-version");
+                checkUpdateButton.setTooltip(new Tooltip("New version " + latestVersion + " released"));
+                checkUpdateButton.setGraphic(null);
+            },
+            () -> {
+                checkUpdateButton.getStyleClass().add("check-update-button");
+                checkUpdateButton.setGraphic(null);
+                if (!ignoreToast) {
+                    VToast.info(ResourceBundleUtils.getContent("action.check-update.no-change"));
+                }
+            },
+            ex -> {
+                checkUpdateButton.getStyleClass().add("check-update-button");
+                checkUpdateButton.setGraphic(null);
+                if (!ignoreToast) {
+                    VToast.info(ex.getMessage());
+                }
+            });
+    }
+
+    private void initMenuAction() {
+        checkUpdateButton.setOnAction(e -> {
+            doCheckForUpdate(false);
+        });
         serverAddButton.setOnMouseClicked(event -> {
             serverListView.getSelectionModel().clearSelection();
             serverViewController.show(mainRightPane);
         });
-        exportMenuItem.setOnAction(e -> onExportAction());
-        importMenuItem.setOnAction(e -> onImportAction());
-        logMenuItem.setOnAction(e -> {
+        logsButton.setOnAction(e -> {
             logViewController.show(mainRightPane);
             serverListView.selectionModelProperty().get().clearSelection();
         });
-        newVersionLabel.setOnMouseClicked(e -> HostServiceContext.jumpToReleases());
-        serverViewController.setOnClose(() -> this.serverListView.selectionModelProperty().get().clearSelection());
-        prettyZooLink.setOnMouseClicked(e -> HostServiceContext.get().showDocument(prettyZooLink.getText()));
-        initFontChangeButton();
+        darkModeSwitchButton.setOnAction(e -> {
+            prettyZooFacade.changeTheme();
+        });
+        exportMenuItem.setOnAction(e -> onExportAction());
+        importMenuItem.setOnAction(e -> onImportAction());
+        resetMenuItem.setOnAction(e -> {
+            prettyZooFacade.resetConfiguration();
+            PrimaryStageContext.get().close();
+            Platform.runLater(() -> new PrettyZooApplication().start(new Stage()));
+        });
+        zookeeperPropsMenuItem.setOnAction(e -> {
+            Properties properties = prettyZooFacade.loadZookeeperSystemProperties();
+            try (StringWriter writer = new StringWriter()) {
+                properties.store(writer, null);
+                Dialog.confirmEditable(ResourceBundleUtils.getContent("main.menuBar.config.zookeeper-prop"),
+                    writer.toString(),
+                    content -> {
+                        prettyZooFacade.saveZookeeperSystemProperties(content);
+                        Platform.runLater(() ->
+                            VToast.info(ResourceBundleUtils.getContent("notification.save.success")));
+                    });
+            } catch (IOException ex) {
+                log.error("load zookeeper properties error", ex);
+                throw new RuntimeException(ex);
+            }
+        });
     }
 
     public void bindShortcutKey() {
         serverAddButton.setTooltip(new Tooltip(ShortcutKeys.NEW_SERVER.key().getDisplayText()));
         rootStackPane.getScene()
-                .getAccelerators()
-                .put(ShortcutKeys.NEW_SERVER.key(), () -> serverViewController.show(mainRightPane));
+            .getAccelerators()
+            .put(ShortcutKeys.NEW_SERVER.key(), () -> serverViewController.show(mainRightPane));
     }
 
     private void initFontChangeButton() {
         Integer fontSize = prettyZooFacade.getFontSize();
         rootStackPane.setStyle("-fx-font-size: " + fontSize);
-        var jfxSlider = new JFXSlider(8, 25, fontSize);
-        jfxSlider.valueProperty().addListener(((observable, oldValue, newValue) -> {
+        fontSizeSlider.setValue(fontSize);
+
+        fontSizeSlider.valueProperty().addListener(((observable, oldValue, newValue) -> {
             if (newValue != null) {
                 rootStackPane.setStyle("-fx-font-size: " + newValue);
                 prettyZooFacade.changeFontSize(newValue.intValue());
             }
         }));
-        var jfxSliderItem = new MenuItem("", jfxSlider);
-        var valueTextBinding = Bindings.createStringBinding(() -> jfxSlider.valueProperty().intValue() + "", jfxSlider.valueProperty());
-        jfxSliderItem.textProperty().bind(valueTextBinding);
-        fontMenuButton.getItems().add(jfxSliderItem);
+        var valueTextBinding = Bindings.createStringBinding(() -> fontSizeSlider.valueProperty().intValue() + "",
+            fontSizeSlider.valueProperty());
+        fontSizeMenuItem.textProperty().bind(valueTextBinding);
 
         var langToggleGroup = new ToggleGroup();
         for (ConfigData.Lang value : ConfigData.Lang.values()) {
@@ -164,7 +289,7 @@ public class MainViewController {
             return;
         }
         Platform.runLater(() -> Try.of(() -> prettyZooFacade.exportConfig(file))
-                .onFailure(e -> VToast.error(e.getMessage())));
+            .onFailure(e -> VToast.error(e.getMessage())));
     }
 
     private void onImportAction() {
@@ -176,18 +301,15 @@ public class MainViewController {
             return;
         }
         Try.of(() -> prettyZooFacade.importConfig(configFile))
-                .onFailure(e -> Platform.runLater(() -> VToast.error(e.getMessage())));
+            .onFailure(e -> Platform.runLater(() -> VToast.error(e.getMessage())));
     }
 
     private void initServerListView() {
-        final ConfigurationVO configurationVO = new ConfigurationVO();
-        prettyZooFacade.loadServerConfigurations(new DefaultConfigurationListener(configurationVO));
-        serverListView.itemsProperty().set(configurationVO.getServers());
         serverListView.setCellFactory(cellCallback -> {
             var cell = new ZkServerListCell(
-                    server -> serverViewController.connect(mainRightPane, server),
-                    server -> serverViewController.delete(server.getZkUrl()),
-                    server -> serverViewController.disconnect(server.getZkUrl())
+                server -> serverViewController.connect(mainRightPane, server),
+                server -> serverViewController.deleteById(server.getId()),
+                server -> serverViewController.disconnect(server.getId())
             );
             cell.setOnMouseClicked(event -> {
                 if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) {
@@ -207,21 +329,24 @@ public class MainViewController {
         });
     }
 
-    public StackPane getRootStackPane() {
-        return rootStackPane;
+    private void initConfigs() {
+        final ConfigurationVO configurationVO = new ConfigurationVO();
+        configurationVO.getServers()
+            .addListener((ListChangeListener<? super ServerConfigurationVO>) (change) -> {
+                if (change.getList().isEmpty()) {
+                    mainSplitPane.setDividerPositions(calculateDividerPositions());
+                } else {
+                    mainSplitPane.setDividerPositions(0.25);
+                }
+            });
+        prettyZooFacade.loadServerConfigurations(new DefaultConfigurationListener(configurationVO));
+        serverListView.itemsProperty().set(configurationVO.getServers());
     }
 
-    public void showNewVersionLabel() {
-        VersionChecker.hasNewVersion((latestVersion, features) -> {
-            String title = "New version";
-            final String content = new StringBuilder()
-                    .append("current: ").append(latestVersion).append("\r\n")
-                    .append("release: v").append(Version.VERSION).append("\r\n")
-                    .append("features: \r\n").append(features)
-                    .toString();
-            newVersionLabel.setTooltip(new Tooltip("New version " + latestVersion + " released"));
-            newVersionLabel.setVisible(true);
-            Dialog.confirm(title, content, HostServiceContext::jumpToReleases);
-        });
+    private double calculateDividerPositions() {
+        double buttonBarWidth = serverButtons.getPrefWidth();
+        double mainPaneWidth = rootStackPane.getPrefWidth();
+        return (buttonBarWidth + 6) / mainPaneWidth;
     }
+
 }

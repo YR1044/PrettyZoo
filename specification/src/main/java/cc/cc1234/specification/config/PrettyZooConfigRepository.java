@@ -1,6 +1,5 @@
 package cc.cc1234.specification.config;
 
-
 import cc.cc1234.specification.config.model.ConfigData;
 
 import java.io.InputStream;
@@ -15,6 +14,12 @@ public interface PrettyZooConfigRepository {
     String OLD_CONFIG_PATH = System.getProperty("user.home") + "/.prettyZoo/server-input.history";
 
     String CONFIG_PATH = System.getProperty("user.home") + "/.prettyZoo/prettyZoo.cfg";
+
+    String SYS_PROP_PATH = System.getProperty("user.home") + "/.prettyZoo/zookeeper.properties";
+
+    String THEME_DEFAULT = "default";
+
+    String THEME_DARK = "dark";
 
     ConfigData get();
 

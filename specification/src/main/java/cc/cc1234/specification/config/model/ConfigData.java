@@ -1,12 +1,15 @@
 package cc.cc1234.specification.config.model;
 
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+
+import static cc.cc1234.specification.config.PrettyZooConfigRepository.THEME_DEFAULT;
 
 /**
  * 客户端核心配置
@@ -19,6 +22,10 @@ public class ConfigData {
     private FontConfigData fontConfig;
 
     private LocalConfigData localConfig = new LocalConfigData();
+
+    private UiConfig uiConfig = new UiConfig();
+
+    private String theme = THEME_DEFAULT;
 
     @Data
     @AllArgsConstructor
@@ -59,10 +66,24 @@ public class ConfigData {
         public static Lang valueOf(Locale locale) {
             for (Lang value : Lang.values()) {
                 if (value.getLocale().getLanguage().equals(locale.getLanguage())) {
-                    return  value;
+                    return value;
                 }
             }
             return null;
         }
+    }
+
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Builder
+    public static class UiConfig {
+
+        @Builder.Default
+        private double mainSplitPaneDividerPosition = 0.3;
+
+        @Builder.Default
+        private double nodeViewSplitPaneDividerPosition = 0.3;
+
     }
 }

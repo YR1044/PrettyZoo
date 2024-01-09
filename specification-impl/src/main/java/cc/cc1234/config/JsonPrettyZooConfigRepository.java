@@ -8,12 +8,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class JsonPrettyZooConfigRepository implements PrettyZooConfigRepository {
@@ -30,11 +28,25 @@ public class JsonPrettyZooConfigRepository implements PrettyZooConfigRepository 
         final ConfigData config = JsonUtils.from(CONFIG_PATH, ConfigData.class);
         final List<ServerConfigData> sortedServers = config.getServers()
                 .stream()
+                .filter(serverConfigData -> serverConfigData.getConnectTimes() > 0)
                 .sorted(Comparator.comparingInt(ServerConfigData::getConnectTimes))
                 .collect(Collectors.toList());
         // sort by connect times desc
         Collections.reverse(sortedServers);
-        config.setServers(sortedServers);
+        List<ServerConfigData> unConnectServers = config.getServers()
+                .stream()
+                .filter(serverConfigData -> serverConfigData.getConnectTimes() == 0)
+                .collect(Collectors.toList());
+
+        List<ServerConfigData> servers = new ArrayList<>();
+        servers.addAll(sortedServers);
+        servers.addAll(unConnectServers);
+        servers.forEach(s -> {
+            if (s.getId() == null) {
+                s.setId(UUID.randomUUID().toString());
+            }
+        });
+        config.setServers(servers);
         return config;
     }
 
@@ -53,7 +65,7 @@ public class JsonPrettyZooConfigRepository implements PrettyZooConfigRepository 
     public void save(ConfigData config) {
         try {
             final String json = JsonUtils.to(config);
-            Files.write(Paths.get(CONFIG_PATH), json.getBytes());
+            Files.write(Paths.get(CONFIG_PATH), json.getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -82,22 +94,13 @@ public class JsonPrettyZooConfigRepository implements PrettyZooConfigRepository 
     }
 
     private void merge(ConfigData originConfig, ConfigData newConfig) {
-        var conflict = newConfig.getServers().stream().anyMatch(s -> s.getUrl() == null);
-        if (conflict) {
-            throw new IllegalStateException("Import failed, because imported config is out-of-date");
-        }
-        // ignore exists server
-        Set<String> originServers = originConfig.getServers()
-                .stream()
-                .map(ServerConfigData::getUrl)
-                .collect(Collectors.toSet());
-        List<ServerConfigData> newServers = newConfig.getServers()
-                .stream()
-                .filter(server -> !originServers.contains(server.getUrl()))
-                .collect(Collectors.toList());
-
         // add new Server
-        originConfig.getServers().addAll(newServers);
+        originConfig.getServers().addAll(newConfig.getServers());
+        originConfig.getServers().forEach(s -> {
+            if (s.getId() == null) {
+                s.setId(UUID.randomUUID().toString());
+            }
+        });
 
         // serialize
         save(originConfig);

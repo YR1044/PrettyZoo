@@ -2,14 +2,17 @@ package cc.cc1234.app.listener;
 
 import cc.cc1234.app.cache.TreeItemCache;
 import cc.cc1234.app.context.ActiveServerContext;
+import cc.cc1234.app.context.LocaleContext;
 import cc.cc1234.app.vo.ConfigurationVO;
 import cc.cc1234.app.vo.ConfigurationVOTransfer;
+import cc.cc1234.app.vo.ConnectionConfigurationVO;
 import cc.cc1234.app.vo.ServerConfigurationVO;
+import cc.cc1234.specification.config.model.ConnectionConfigData;
 import cc.cc1234.specification.config.model.ServerConfigData;
 import cc.cc1234.specification.listener.ConfigurationChangeListener;
-import javafx.collections.FXCollections;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -28,11 +31,11 @@ public class DefaultConfigurationListener implements ConfigurationChangeListener
 
     @Override
     public void onServerRemove(ServerConfigData removeServer) {
-        if (removeServer.getUrl().equals(ActiveServerContext.get())) {
+        if (removeServer.getId().equals(ActiveServerContext.get())) {
             ActiveServerContext.invalidate();
         }
-        TreeItemCache.getInstance().remove(removeServer.getUrl());
-        configurationVO.getServers().removeIf(vo -> vo.getZkUrl().equals(removeServer.getUrl()));
+        TreeItemCache.getInstance().remove(removeServer.getId());
+        configurationVO.getServers().removeIf(vo -> vo.getId().equals(removeServer.getId()));
     }
 
     @Override
@@ -40,33 +43,47 @@ public class DefaultConfigurationListener implements ConfigurationChangeListener
         final ServerConfigurationVO vo = ConfigurationVOTransfer.to(newValue);
         configurationVO.getServers()
                 .stream()
-                .filter(s -> Objects.equals(s.getZkUrl(), newValue.getUrl()))
+                .filter(s -> Objects.equals(s.getId(), newValue.getId()))
                 .findFirst()
                 .map(old -> {
-                    old.setAclList(FXCollections.observableList(newValue.getAclList()));
+                    old.setAcl(String.join("\n", newValue.getAclList()));
                     old.setZkAlias(newValue.getAlias());
-                    newValue.getSshTunnelConfig()
-                            .map(sshTunnelConfig -> {
-                                old.setSshEnabled(newValue.getSshTunnelEnabled());
-                                old.setSshServer(sshTunnelConfig.getSshHost());
-                                old.setSshServerPort(sshTunnelConfig.getSshPort());
-                                old.setRemoteServer(sshTunnelConfig.getRemoteHost());
-                                old.setRemoteServerPort(sshTunnelConfig.getRemotePort());
-                                old.setSshUsername(sshTunnelConfig.getSshUsername());
-                                old.setSshPassword(sshTunnelConfig.getPassword());
-                                return true;
-                            })
-                            .orElseGet(() -> {
-                                old.setSshEnabled(newValue.getSshTunnelEnabled());
-                                old.setSshServer("");
-                                old.setSshServerPort(null);
-                                old.setSshUsername("");
-                                old.setSshPassword("");
-                                old.setRemoteServer("");
-                                old.setRemoteServerPort(null);
-                                return true;
-                            });
+                    old.setEnableConnectionAdvanceConfiguration(newValue.getEnableConnectionAdvanceConfiguration());
+                    old.setZkHost(newValue.getHost());
+                    old.setZkPort(newValue.getPort());
+                    if (newValue.getSshTunnelEnabled()) {
+                        newValue.getSshTunnelConfig()
+                                .map(sshTunnelConfig -> {
+                                    old.setSshEnabled(newValue.getSshTunnelEnabled());
+                                    old.setSshServer(sshTunnelConfig.getSshHost());
+                                    old.setSshServerPort(sshTunnelConfig.getSshPort());
+                                    old.setRemoteServer(sshTunnelConfig.getRemoteHost());
+                                    old.setRemoteServerPort(sshTunnelConfig.getRemotePort());
+                                    old.setSshUsername(sshTunnelConfig.getSshUsername());
+                                    old.setSshPassword(sshTunnelConfig.getPassword());
+                                    old.setSshKeyFilePath(sshTunnelConfig.getSshKeyFilePath());
+                                    return true;
+                                })
+                                .orElseGet(() -> {
+                                    old.setSshEnabled(newValue.getSshTunnelEnabled());
+                                    old.setSshServer("");
+                                    old.setSshServerPort(22);
+                                    old.setSshUsername("");
+                                    old.setSshPassword("");
+                                    old.setRemoteServer("");
+                                    old.setRemoteServerPort(2181);
+                                    old.setSshKeyFilePath("");
+                                    return true;
+                                });
+                    }
 
+                    ConnectionConfigData newAdvanceConfig = newValue.getConnectionConfig();
+                    ConnectionConfigurationVO updated = new ConnectionConfigurationVO();
+                    updated.setConnectionTimeout(newAdvanceConfig.getConnectionTimeout());
+                    updated.setSessionTimeout(newAdvanceConfig.getSessionTimeout());
+                    updated.setMaxRetries(newAdvanceConfig.getMaxRetries());
+                    updated.setRetryIntervalTime(newAdvanceConfig.getRetryIntervalTime());
+                    old.setConnectionConfiguration(updated);
                     return true;
                 })
                 .orElseGet(() -> configurationVO.getServers().add(vo));
@@ -79,5 +96,10 @@ public class DefaultConfigurationListener implements ConfigurationChangeListener
                 .collect(Collectors.toList());
         configurationVO.getServers().clear();
         configurationVO.getServers().addAll(configurations);
+    }
+
+    @Override
+    public void onLocaleChange(Locale locale) {
+        LocaleContext.set(locale);
     }
 }
